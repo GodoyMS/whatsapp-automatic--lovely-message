@@ -1,5 +1,6 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const logger = require('./logger');
 
 class WhatsAppService {
@@ -7,6 +8,8 @@ class WhatsAppService {
         this.client = null;
         this.isReady = false;
         this.qrCodeGenerated = false;
+        this.qrCodeData = null; // Store QR code for web display
+        this.qrCodeImage = null; // Store QR code as base64 image
     }
 
     async initialize() {
@@ -60,10 +63,29 @@ class WhatsAppService {
 
     setupEventHandlers() {
         // QR Code generation
-        this.client.on('qr', (qr) => {
+        this.client.on('qr', async (qr) => {
             if (!this.qrCodeGenerated) {
                 logger.info('QR Code received. Please scan with your WhatsApp:');
-                qrcode.generate(qr, { small: true });
+                
+                // Store QR data for web access
+                this.qrCodeData = qr;
+                
+                try {
+                    // Generate QR code as base64 image for web display
+                    this.qrCodeImage = await QRCode.toDataURL(qr, {
+                        width: 256,
+                        margin: 2
+                    });
+                    logger.info('QR Code available at: http://localhost:3000/qr (or your deployment URL)');
+                } catch (error) {
+                    logger.error('Error generating QR code image:', error);
+                }
+                
+                // Still show in terminal for local development
+                if (process.env.NODE_ENV !== 'production') {
+                    qrcode.generate(qr, { small: true });
+                }
+                
                 this.qrCodeGenerated = true;
             }
         });
@@ -204,7 +226,16 @@ class WhatsAppService {
     getStatus() {
         return {
             isReady: this.isReady,
-            qrCodeGenerated: this.qrCodeGenerated
+            qrCodeGenerated: this.qrCodeGenerated,
+            hasQrCode: !!this.qrCodeData
+        };
+    }
+
+    getQRCode() {
+        return {
+            data: this.qrCodeData,
+            image: this.qrCodeImage,
+            generated: this.qrCodeGenerated
         };
     }
 }

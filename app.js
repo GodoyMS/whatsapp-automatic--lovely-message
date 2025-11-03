@@ -100,6 +100,65 @@ class WhatsAppAutomationApp {
             }
         });
 
+        // QR Code endpoint for WhatsApp authentication
+        this.app.get('/qr', (req, res) => {
+            try {
+                const qrData = this.whatsappService.getQRCode();
+                
+                if (!qrData.generated || !qrData.image) {
+                    return res.status(404).send(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>WhatsApp QR Code</title>
+                            <meta http-equiv="refresh" content="5">
+                            <style>
+                                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                                .loading { color: #666; }
+                            </style>
+                        </head>
+                        <body>
+                            <h1>WhatsApp Authentication</h1>
+                            <p class="loading">Waiting for QR code... This page will refresh automatically.</p>
+                            <p>Status: ${this.whatsappService.getStatus().isReady ? 'Connected' : 'Connecting...'}</p>
+                        </body>
+                        </html>
+                    `);
+                }
+
+                res.send(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>WhatsApp QR Code</title>
+                        <meta http-equiv="refresh" content="30">
+                        <style>
+                            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                            .qr-container { margin: 20px auto; }
+                            .qr-code { max-width: 300px; height: auto; border: 2px solid #ccc; }
+                            .instructions { color: #666; margin-top: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Scan QR Code with WhatsApp</h1>
+                        <div class="qr-container">
+                            <img src="${qrData.image}" alt="WhatsApp QR Code" class="qr-code" />
+                        </div>
+                        <div class="instructions">
+                            <p>1. Open WhatsApp on your phone</p>
+                            <p>2. Go to Settings → Linked Devices</p>
+                            <p>3. Tap "Link a Device" and scan this QR code</p>
+                        </div>
+                        <p><small>This page refreshes every 30 seconds</small></p>
+                    </body>
+                    </html>
+                `);
+            } catch (error) {
+                logger.error('Error serving QR code:', error);
+                res.status(500).json({ error: 'Failed to get QR code' });
+            }
+        });
+
         // Manual message sending
         this.app.post('/send-message', async (req, res) => {
             try {
@@ -233,22 +292,65 @@ class WhatsAppAutomationApp {
 
         // Root endpoint
         this.app.get('/', (req, res) => {
-            res.json({
-                name: 'WhatsApp Automatic Message System',
-                version: '1.0.0',
-                status: this.isInitialized ? 'running' : 'initializing',
-                endpoints: [
-                    'GET /health',
-                    'GET /status',
-                    'POST /send-message',
-                    'POST /send-auto-message',
-                    'GET /history/:phoneNumber?',
-                    'POST /schedule/update - Update message interval (seconds)',
-                    'POST /schedule/start',
-                    'POST /schedule/stop',
-                    'GET /export/:phoneNumber?'
-                ]
-            });
+            const whatsappStatus = this.whatsappService.getStatus();
+            res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>WhatsApp Automatic Message System</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 40px; }
+                        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+                        .ready { background-color: #d4edda; color: #155724; }
+                        .not-ready { background-color: #f8d7da; color: #721c24; }
+                        .endpoints { margin-top: 20px; }
+                        .endpoints ul { list-style-type: none; padding: 0; }
+                        .endpoints li { padding: 5px 0; }
+                        a { color: #007bff; text-decoration: none; }
+                        a:hover { text-decoration: underline; }
+                        .qr-link { font-size: 18px; font-weight: bold; margin: 20px 0; }
+                    </style>
+                </head>
+                <body>
+                    <h1>WhatsApp Automatic Message System</h1>
+                    <div class="status ${whatsappStatus.isReady ? 'ready' : 'not-ready'}">
+                        Status: ${this.isInitialized ? 'Running' : 'Initializing'} | 
+                        WhatsApp: ${whatsappStatus.isReady ? 'Connected' : 'Not Connected'}
+                    </div>
+                    
+                    ${!whatsappStatus.isReady ? `
+                        <div class="qr-link">
+                            <a href="/qr">📱 Scan QR Code to Connect WhatsApp</a>
+                        </div>
+                    ` : `
+                        <div class="status ready">
+                            ✅ WhatsApp is connected and ready!
+                        </div>
+                    `}
+                    
+                    <div class="endpoints">
+                        <h3>Available Endpoints:</h3>
+                        <ul>
+                            <li><a href="/qr">GET /qr</a> - WhatsApp QR Code for authentication</li>
+                            <li><a href="/status">GET /status</a> - System status</li>
+                            <li><a href="/health">GET /health</a> - Health check</li>
+                            <li>POST /send-message - Send manual message</li>
+                            <li>POST /send-auto-message - Send AI-generated message</li>
+                            <li><a href="/history">GET /history/:phoneNumber?</a> - View conversation history</li>
+                            <li>POST /schedule/update - Update message interval (seconds)</li>
+                            <li>POST /schedule/start - Start automatic messaging</li>
+                            <li>POST /schedule/stop - Stop automatic messaging</li>
+                            <li>GET /export/:phoneNumber? - Export conversation history</li>
+                        </ul>
+                    </div>
+                    
+                    <script>
+                        // Auto-refresh every 30 seconds to update status
+                        setTimeout(() => window.location.reload(), 30000);
+                    </script>
+                </body>
+                </html>
+            `);
         });
     }
 

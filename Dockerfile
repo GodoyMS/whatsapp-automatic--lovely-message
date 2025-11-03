@@ -27,9 +27,9 @@ COPY package*.json ./
 # Install dependencies (temporary fix for build - use npm install instead of npm ci)
 RUN npm install --omit=dev && npm cache clean --force
 
-# Create app user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodeapp -u 1001
+# Create app user (Debian syntax)
+RUN groupadd --gid 1001 nodejs && \
+    useradd --uid 1001 --gid nodejs --shell /bin/bash --create-home nodeapp
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs /app/session && \

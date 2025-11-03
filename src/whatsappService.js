@@ -27,6 +27,8 @@ class WhatsAppService {
           "--single-process",
           "--disable-gpu",
         ],
+        executablePath:
+          process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
       };
 
       // Use system Chrome in production (set in Dockerfile)

@@ -1,0 +1,23 @@
+# Normalize line endings
+* text=auto
+
+# Force LF for specific files
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Don't normalize session files
+session/** -text
+.wwebjs_auth/** -text
+.wwebjs_cache/** -text

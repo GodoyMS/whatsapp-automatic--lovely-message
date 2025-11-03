@@ -1,0 +1,40 @@
+# WhatsApp Automatic Message System
+
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# WhatsApp Web.js session and cache files
+.wwebjs_auth/
+.wwebjs_cache/
+session/
+*.session
+
+# Log files
+logs/
+*.log
+
+# Application data
+session.json
+conversation_history.json
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cache directories
+.cache/
+cache/
+
+# Process files
+*.pid

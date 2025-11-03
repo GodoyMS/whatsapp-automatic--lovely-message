@@ -509,8 +509,10 @@ class WhatsAppAutomationApp {
                 logger.error('Failed to initialize WhatsApp service:', whatsappError);
                 logger.warn('App will start without WhatsApp connection. QR code will be available at /qr endpoint');
                 logger.warn('WhatsApp connection can be retried through the health check mechanism');
+                console.log('🔄 Continuing app initialization despite WhatsApp failure...');
             }
 
+            console.log('📋 Setting up scheduled tasks...');
             // Setup scheduled tasks
             logger.info('Setting up scheduled tasks...');
             
@@ -551,9 +553,11 @@ class WhatsAppAutomationApp {
             });
 
             // Start all scheduled jobs
+            console.log('⚡ Starting scheduled jobs...');
             this.cronScheduler.startAll();
 
             this.isInitialized = true;
+            console.log('✅ App initialization completed successfully!');
             logger.info('WhatsApp Automation App initialized successfully!');
             
             return true;
@@ -565,16 +569,21 @@ class WhatsAppAutomationApp {
 
     async start() {
         try {
+            console.log('🚀 Starting initialization process...');
             await this.initialize();
 
+            console.log('🌐 Starting Express server...');
             this.app.listen(this.port, () => {
+                console.log(`🎉 Server is running on port ${this.port}!`);
                 logger.info(`WhatsApp Automation Server running on port ${this.port}`);
                 logger.info(`Target: ${this.targetPhoneNumber}`);
                 logger.info(`Message interval: ${this.messageInterval} seconds`);
                 logger.info(`Dashboard: http://localhost:${this.port}`);
+                console.log(`📱 QR Code available at: http://localhost:${this.port}/qr`);
             });
 
         } catch (error) {
+            console.error('💥 Failed to start application:', error);
             logger.error('Failed to start application:', error);
             process.exit(1);
         }

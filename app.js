@@ -494,37 +494,56 @@ class WhatsAppAutomationApp {
                 throw new Error('TARGET_PHONE_NUMBER environment variable is required');
             }
 
-            // Initialize WhatsApp service
+            // Initialize WhatsApp service with retry mechanism
             logger.info('Initializing WhatsApp service...');
-            await this.whatsappService.initialize();
-
-            // Verify target contact
-            const isValid = await this.whatsappService.isContactValid(this.targetPhoneNumber);
-            if (!isValid) {
-                logger.warn(`Target phone number ${this.targetPhoneNumber} may not be a valid WhatsApp contact`);
+            try {
+                await this.whatsappService.initialize();
+                logger.info('WhatsApp service initialized successfully');
+                
+                // Verify target contact only if WhatsApp is ready
+                const isValid = await this.whatsappService.isContactValid(this.targetPhoneNumber);
+                if (!isValid) {
+                    logger.warn(`Target phone number ${this.targetPhoneNumber} may not be a valid WhatsApp contact`);
+                }
+            } catch (whatsappError) {
+                logger.error('Failed to initialize WhatsApp service:', whatsappError);
+                logger.warn('App will start without WhatsApp connection. QR code will be available at /qr endpoint');
+                logger.warn('WhatsApp connection can be retried through the health check mechanism');
             }
 
             // Setup scheduled tasks
             logger.info('Setting up scheduled tasks...');
             
-            // Auto message sending
+            // Auto message sending (only if WhatsApp is ready)
             this.cronScheduler.scheduleAutoMessages(
                 this.messageInterval,
-                () => this.sendAutomaticMessage()
+                () => {
+                    if (this.whatsappService.isReady) {
+                        return this.sendAutomaticMessage();
+                    } else {
+                        logger.warn('Skipping auto message - WhatsApp not ready');
+                        return Promise.resolve();
+                    }
+                }
             );
 
-            // Daily history sync
+            // Daily history sync (only if WhatsApp is ready)
             this.cronScheduler.scheduleHistorySync(async () => {
-                const messages = await this.whatsappService.getMessages(this.targetPhoneNumber, 20);
-                await this.conversationHistory.updateHistoryFromWhatsApp(this.targetPhoneNumber, messages);
+                if (this.whatsappService.isReady) {
+                    const messages = await this.whatsappService.getMessages(this.targetPhoneNumber, 20);
+                    await this.conversationHistory.updateHistoryFromWhatsApp(this.targetPhoneNumber, messages);
+                } else {
+                    logger.debug('Skipping history sync - WhatsApp not ready');
+                }
             });
 
-            // Health check every 30 minutes
+            // Health check every 30 minutes - try to reconnect WhatsApp if needed
             this.cronScheduler.scheduleHealthCheck(async () => {
                 if (!this.whatsappService.isReady) {
                     logger.warn('WhatsApp service is not ready - attempting to reconnect...');
                     try {
                         await this.whatsappService.initialize();
+                        logger.info('WhatsApp service reconnected successfully');
                     } catch (error) {
                         logger.error('Failed to reconnect WhatsApp service:', error);
                     }

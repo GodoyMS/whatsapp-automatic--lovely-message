@@ -14,25 +14,49 @@ class WhatsAppService {
 
     async initialize() {
         try {
+            // Enhanced Puppeteer configuration for cloud deployment
+            const puppeteerConfig = {
+                headless: true,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-gpu',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-extensions',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--disable-background-networking',
+                    '--disable-component-extensions-with-background-pages',
+                    '--disable-permissions-api',
+                    '--disable-notifications',
+                    '--disable-web-security',
+                    '--memory-pressure-off',
+                    '--max_old_space_size=4096'
+                ]
+            };
+
+            // Use system Chromium in production (set in Dockerfile)
+            if (process.env.NODE_ENV === 'production' && process.env.PUPPETEER_EXECUTABLE_PATH) {
+                puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+            }
+
             // Initialize WhatsApp client with local authentication
             this.client = new Client({
                 authStrategy: new LocalAuth({
                     clientId: 'whatsapp-auto-message',
                     dataPath: './session'
                 }),
-                puppeteer: {
-                    headless: true,
-                    args: [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-accelerated-2d-canvas',
-                        '--no-first-run',
-                        '--no-zygote',
-                        '--single-process',
-                        '--disable-gpu'
-                    ]
-                }
+                puppeteer: puppeteerConfig
             });
 
             this.setupEventHandlers();

@@ -21,8 +21,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install dependencies (temporary fix for build - use npm install instead of npm ci)
+RUN npm install --omit=dev && npm cache clean --force
 
 # Create app user
 RUN addgroup -g 1001 -S nodejs

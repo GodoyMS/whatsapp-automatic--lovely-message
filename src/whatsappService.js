@@ -45,9 +45,10 @@ class WhatsAppService {
                 ]
             };
 
-            // Use system Chromium in production (set in Dockerfile)
+            // Use system Chrome in production (set in Dockerfile)
             if (process.env.NODE_ENV === 'production' && process.env.PUPPETEER_EXECUTABLE_PATH) {
                 puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+                logger.info(`Using system Chrome at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
             }
 
             // Initialize WhatsApp client with local authentication

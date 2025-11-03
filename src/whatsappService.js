@@ -17,6 +17,10 @@ class WhatsAppService {
       // Enhanced Puppeteer configuration for cloud deployment
       const puppeteerConfig = {
         headless: true,
+        executablePath:
+          process.env.PUPPETEER_EXECUTABLE_PATH ||
+          process.env.CHROME_PATH ||
+          "/usr/bin/google-chrome-stable",
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -24,11 +28,9 @@ class WhatsAppService {
           "--disable-accelerated-2d-canvas",
           "--no-first-run",
           "--no-zygote",
-          "--single-process",
           "--disable-gpu",
+          "--single-process",
         ],
-        executablePath:
-          process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
       };
 
       // Use system Chrome in production (set in Dockerfile)
@@ -54,6 +56,8 @@ class WhatsAppService {
       this.setupEventHandlers();
 
       logger.info("Initializing WhatsApp client...");
+      console.log('🧭 Puppeteer config:', puppeteerConfig);
+
       await this.client.initialize();
 
       return new Promise((resolve, reject) => {

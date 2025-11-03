@@ -2,6 +2,7 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const QRCode = require("qrcode");
 const logger = require("./logger");
+const chromium = require("@sparticuz/chromium");
 
 class WhatsAppService {
   constructor() {
@@ -17,20 +18,8 @@ class WhatsAppService {
       // Enhanced Puppeteer configuration for cloud deployment
       const puppeteerConfig = {
         headless: true,
-        executablePath:
-          process.env.PUPPETEER_EXECUTABLE_PATH ||
-          process.env.CHROME_PATH ||
-          "/usr/bin/google-chrome-stable",
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--disable-gpu",
-          "--single-process",
-        ],
+        executablePath: await chromium.executablePath(),
+        args: chromium.args,
       };
 
       // Use system Chrome in production (set in Dockerfile)
@@ -56,7 +45,7 @@ class WhatsAppService {
       this.setupEventHandlers();
 
       logger.info("Initializing WhatsApp client...");
-      console.log('🧭 Puppeteer config:', puppeteerConfig);
+      console.log("🧭 Puppeteer config:", puppeteerConfig);
 
       await this.client.initialize();
 

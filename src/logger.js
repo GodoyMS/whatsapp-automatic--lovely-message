@@ -36,8 +36,18 @@ const logger = winston.createLogger({
 });
 
 // If we're not in production, log to the console as well
+// Also always log to console for critical startup messages
 if (process.env.NODE_ENV !== 'production') {
     logger.add(new winston.transports.Console({
+        format: winston.format.combine(
+            winston.format.colorize(),
+            winston.format.simple()
+        )
+    }));
+} else {
+    // In production, still log errors and startup info to console
+    logger.add(new winston.transports.Console({
+        level: 'error',
         format: winston.format.combine(
             winston.format.colorize(),
             winston.format.simple()

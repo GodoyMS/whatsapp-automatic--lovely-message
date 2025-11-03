@@ -11,14 +11,29 @@ const ConversationHistory = require('./src/conversationHistory');
 const CronScheduler = require('./src/cronScheduler');
 const logger = require('./src/logger');
 
+// Immediate startup log
+console.log('🚀 Starting WhatsApp Automatic Message System...');
+console.log(`📅 Current time: ${new Date().toISOString()}`);
+console.log(`🔧 Node.js version: ${process.version}`);
+console.log(`📍 Working directory: ${process.cwd()}`);
+console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log('📝 Loading configuration...');
+
 class WhatsAppAutomationApp {
     constructor() {
+        console.log('🏗️ Initializing WhatsApp Automation App...');
+        
         this.app = express();
         this.port = process.env.PORT || 3000;
         this.targetPhoneNumber = process.env.TARGET_PHONE_NUMBER;
         this.messageInterval = parseInt(process.env.MESSAGE_INTERVAL_SECONDS) || 10;
         
+        console.log(`📱 Target phone: ${this.targetPhoneNumber}`);
+        console.log(`⏱️ Message interval: ${this.messageInterval} seconds`);
+        console.log(`🌐 Server port: ${this.port}`);
+        
         // Services
+        console.log('🔧 Creating services...');
         this.whatsappService = new WhatsAppService();
         this.messageGenerator = new MessageGenerator(
             process.env.OPENAI_API_KEY,
@@ -35,6 +50,8 @@ class WhatsAppAutomationApp {
             errors: 0,
             startTime: new Date()
         };
+
+        console.log('⚙️ Setting up Express app...');
 
         this.setupExpress();
         this.setupRoutes();

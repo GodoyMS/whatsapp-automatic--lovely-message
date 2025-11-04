@@ -7,6 +7,7 @@ const AlternativeWhatsAppService = require('./src/alternativeWhatsAppService');
 const MessageGenerator = require('./src/messageGenerator');
 const ConversationHistory = require('./src/conversationHistory');
 const CronScheduler = require('./src/cronScheduler');
+const VoiceGenerator = require('./src/voiceGenerator');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,17 +22,116 @@ let isUsingAlternative = false;
 let messageGenerator = null;
 let conversationHistory = null;
 let cronScheduler = null;
+let voiceGenerator = null;
 let isAutomationInitialized = false;
 
 // Configuration
 const targetPhoneNumber = process.env.TARGET_PHONE_NUMBER;
 const messageInterval = parseInt(process.env.MESSAGE_INTERVAL_SECONDS) || 10;
+const voiceInterval = parseInt(process.env.VOICE_INTERVAL_SECONDS) || 240; // Voice messages every 240 seconds (4 minutes for testing)
 const stats = {
     messagesSent: 0,
+    voiceMessagesSent: 0,
     errors: 0,
     startTime: new Date()
 };
 let lastMessageSent = null;
+let lastVoiceMessageSent = null;
+
+// Automatic voice message sending function
+async function sendAutomaticVoiceMessage() {
+    try {
+        if (!whatsappService || !whatsappService.isReady) {
+            logger.warn('WhatsApp service is not ready for voice message');
+            return null;
+        }
+
+        if (!voiceGenerator) {
+            logger.warn('Voice generator not available');
+            return null;
+        }
+
+        if (!targetPhoneNumber) {
+            throw new Error('Target phone number not configured');
+        }
+
+        if (isUsingAlternative) {
+            logger.warn('Voice messages not supported with alternative service');
+            return null;
+        }
+
+        logger.info('Sending automatic voice message...');
+
+        // Update conversation history from WhatsApp
+        try {
+            const whatsappMessages = await whatsappService.getMessages(targetPhoneNumber, 10);
+            await conversationHistory.updateHistoryFromWhatsApp(targetPhoneNumber, whatsappMessages);
+        } catch (error) {
+            logger.warn('Failed to update history from WhatsApp:', error.message);
+        }
+
+        // Get recent conversation history
+        const conversationHistoryData = await conversationHistory.getHistory(targetPhoneNumber, 10);
+
+        // Generate message for voice
+        const messageOptions = {
+            style: process.env.MESSAGE_STYLE || 'romantic',
+            language: process.env.MESSAGE_LANGUAGE || 'spanish',
+            temperature: parseFloat(process.env.TEMPERATURE) || 0.9 // Higher for voice
+        };
+
+        const result = await messageGenerator.generateVoiceMessage(conversationHistoryData, messageOptions);
+
+        if (!result.message) {
+            throw new Error('Failed to generate message for voice');
+        }
+
+        // Validate message
+        const validation = messageGenerator.validateMessage(result.message);
+        if (!validation.valid) {
+            throw new Error(`Invalid message for voice: ${validation.reason}`);
+        }
+
+        // Generate voice audio
+        const voiceResult = await voiceGenerator.generateVoiceForMessage(result.message);
+
+        if (!voiceResult.success) {
+            throw new Error('Failed to generate voice audio');
+        }
+
+        // Send ONLY voice message (no text)
+        const sendResult = await whatsappService.sendVoiceMessage(
+            targetPhoneNumber, 
+            voiceResult.filePath
+        );
+
+        // Save the original generated message to history for context
+        await conversationHistory.addMessage(targetPhoneNumber, `[Voice: ${result.message}]`, 'me');
+
+        // Update stats
+        stats.voiceMessagesSent++;
+        lastVoiceMessageSent = {
+            message: result.message,
+            timestamp: new Date(),
+            phoneNumber: targetPhoneNumber,
+            type: 'automatic_voice',
+            voiceFile: voiceResult.filename,
+            openaiUsage: result.usage,
+            serviceType: 'primary'
+        };
+
+        // Cleanup old voice files
+        await voiceGenerator.cleanupOldFiles(10);
+
+        logger.info(`Automatic voice message sent successfully: "${result.message}"`);
+        return lastVoiceMessageSent;
+
+    } catch (error) {
+        logger.error('Error sending automatic voice message:', error);
+        stats.errors++;
+        throw error;
+    }
+}
 
 // Automatic message sending function
 async function sendAutomaticMessage() {
@@ -131,6 +231,14 @@ async function initializeAutomation() {
         conversationHistory = new ConversationHistory('./data');
         cronScheduler = new CronScheduler();
 
+        // Initialize voice generator if API key is available
+        if (process.env.ELEVENLABS_API_KEY) {
+            voiceGenerator = new VoiceGenerator(process.env.ELEVENLABS_API_KEY);
+            logger.info('Voice generator initialized successfully');
+        } else {
+            logger.warn('ELEVENLABS_API_KEY not configured - voice messages disabled');
+        }
+
         // Setup scheduled automatic messages
         cronScheduler.scheduleAutoMessages(
             messageInterval,
@@ -146,6 +254,26 @@ async function initializeAutomation() {
                 }
             }
         );
+
+        // Setup voice message scheduling (every 240 seconds or configured interval)
+        if (voiceGenerator && !isUsingAlternative) {
+            cronScheduler.scheduleCustomTask(
+                'voiceMessages',
+                cronScheduler.secondsToCronExpression(voiceInterval),
+                async () => {
+                    if (whatsappService && whatsappService.isReady) {
+                        try {
+                            await sendAutomaticVoiceMessage();
+                        } catch (error) {
+                            logger.error('Scheduled voice message failed:', error);
+                        }
+                    } else {
+                        logger.debug('Skipping voice message - WhatsApp not ready');
+                    }
+                }
+            );
+            logger.info(`Voice messages scheduled every ${voiceInterval} seconds`);
+        }
 
         // Setup daily history sync (only for primary service)
         if (!isUsingAlternative) {
@@ -168,7 +296,12 @@ async function initializeAutomation() {
         cronScheduler.startAll();
 
         isAutomationInitialized = true;
-        logger.info(`Automation initialized successfully! Messages will be sent every ${messageInterval} seconds to ${targetPhoneNumber}`);
+        logger.info(`Automation initialized successfully!`);
+        logger.info(`📱 Text messages: every ${messageInterval} seconds`);
+        if (voiceGenerator && !isUsingAlternative) {
+            logger.info(`🎤 Voice messages: every ${voiceInterval} seconds`);
+        }
+        logger.info(`📞 Target: ${targetPhoneNumber}`);
         
         return true;
     } catch (error) {
@@ -222,6 +355,10 @@ app.get('/', (req, res) => {
         `✅ Active (${messageInterval}s interval)` : 
         '❌ Not initialized';
     
+    const voiceStatus = voiceGenerator && !isUsingAlternative ? 
+        `✅ Active (${voiceInterval}s interval)` : 
+        '❌ Not available';
+    
     res.send(`
         <html>
         <head><title>WhatsApp Automation</title></head>
@@ -229,9 +366,12 @@ app.get('/', (req, res) => {
             <h1>📱 WhatsApp Automation System</h1>
             <p><strong>Service Type:</strong> ${isUsingAlternative ? 'Alternative' : 'Primary'}</p>
             <p><strong>Target:</strong> ${targetPhoneNumber || 'Not configured'}</p>
-            <p><strong>Automation:</strong> ${automationStatus}</p>
+            <p><strong>Text Automation:</strong> ${automationStatus}</p>
+            <p><strong>Voice Automation:</strong> ${voiceStatus}</p>
             <p><strong>Messages Sent:</strong> ${stats.messagesSent}</p>
+            <p><strong>Voice Messages:</strong> ${stats.voiceMessagesSent}</p>
             <p><strong>Last Message:</strong> ${lastMessageSent ? lastMessageSent.timestamp.toLocaleString() : 'None'}</p>
+            <p><strong>Last Voice:</strong> ${lastVoiceMessageSent ? lastVoiceMessageSent.timestamp.toLocaleString() : 'None'}</p>
             <div style="margin: 20px;">
                 <a href="/status" style="margin: 10px; padding: 10px; background: #007cba; color: white; text-decoration: none;">Status</a>
                 <a href="/qr" style="margin: 10px; padding: 10px; background: #25d366; color: white; text-decoration: none;">QR Code</a>
@@ -239,6 +379,7 @@ app.get('/', (req, res) => {
             </div>
             <div style="margin: 20px;">
                 <button onclick="sendTestMessage()" style="margin: 5px; padding: 10px; background: #e74c3c; color: white; border: none; cursor: pointer;">Send Test Message</button>
+                <button onclick="sendTestVoice()" style="margin: 5px; padding: 10px; background: #9b59b6; color: white; border: none; cursor: pointer;">Send Test Voice</button>
                 <button onclick="toggleScheduler()" style="margin: 5px; padding: 10px; background: #f39c12; color: white; border: none; cursor: pointer;">Toggle Scheduler</button>
             </div>
             <script>
@@ -247,6 +388,17 @@ app.get('/', (req, res) => {
                         const response = await fetch('/send-auto-message', { method: 'POST' });
                         const result = await response.json();
                         alert(result.success ? 'Message sent!' : 'Error: ' + result.error);
+                        location.reload();
+                    } catch (error) {
+                        alert('Error: ' + error.message);
+                    }
+                }
+
+                async function sendTestVoice() {
+                    try {
+                        const response = await fetch('/send-auto-voice', { method: 'POST' });
+                        const result = await response.json();
+                        alert(result.success ? 'Voice message sent!' : 'Error: ' + result.error);
                         location.reload();
                     } catch (error) {
                         alert('Error: ' + error.message);
@@ -277,6 +429,7 @@ app.get('/status', async (req, res) => {
         const clientInfo = whatsappService && !isUsingAlternative ? await whatsappService.getClientInfo() : null;
         const conversationStats = conversationHistory ? await conversationHistory.getConversationStats(targetPhoneNumber) : null;
         const cronStats = cronScheduler ? cronScheduler.getStats() : null;
+        const voiceStats = voiceGenerator ? voiceGenerator.getStats() : null;
 
         res.json({
             service: isUsingAlternative ? 'alternative' : 'primary',
@@ -284,11 +437,14 @@ app.get('/status', async (req, res) => {
             client: clientInfo,
             conversation: conversationStats,
             scheduler: cronStats,
+            voice: voiceStats,
             automation: {
                 initialized: isAutomationInitialized,
                 target: targetPhoneNumber,
-                interval: `${messageInterval} seconds`,
-                lastMessage: lastMessageSent
+                textInterval: `${messageInterval} seconds`,
+                voiceInterval: `${voiceInterval} seconds`,
+                lastMessage: lastMessageSent,
+                lastVoiceMessage: lastVoiceMessageSent
             },
             stats,
             timestamp: new Date().toISOString()
@@ -359,6 +515,98 @@ app.post('/send-auto-message', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error sending automatic message:', error);
+        stats.errors++;
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send automatic voice message (manual trigger)
+app.post('/send-auto-voice', async (req, res) => {
+    try {
+        if (!isAutomationInitialized) {
+            return res.status(503).json({ error: 'Automation not initialized' });
+        }
+
+        if (!voiceGenerator) {
+            return res.status(503).json({ error: 'Voice generator not available' });
+        }
+
+        if (isUsingAlternative) {
+            return res.status(503).json({ error: 'Voice messages not supported with alternative service' });
+        }
+
+        const result = await sendAutomaticVoiceMessage();
+        res.json({
+            success: true,
+            result,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Error sending automatic voice message:', error);
+        stats.errors++;
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send manual voice message
+app.post('/send-voice-message', async (req, res) => {
+    try {
+        const { message, phoneNumber } = req.body;
+        
+        if (!message) {
+            return res.status(400).json({ error: 'Message is required' });
+        }
+
+        if (!voiceGenerator) {
+            return res.status(503).json({ error: 'Voice generator not available' });
+        }
+
+        if (!whatsappService || !whatsappService.isReady) {
+            return res.status(503).json({ error: 'WhatsApp service not ready' });
+        }
+
+        if (isUsingAlternative) {
+            return res.status(503).json({ error: 'Voice messages not supported with alternative service' });
+        }
+
+        const targetPhone = phoneNumber || targetPhoneNumber;
+        if (!targetPhone) {
+            return res.status(400).json({ error: 'Phone number is required' });
+        }
+
+        // Generate voice audio
+        const voiceResult = await voiceGenerator.generateVoiceForMessage(message);
+
+        if (!voiceResult.success) {
+            throw new Error('Failed to generate voice audio');
+        }
+
+        // Send ONLY voice message (no text)
+        const result = await whatsappService.sendVoiceMessage(targetPhone, voiceResult.filePath);
+        
+        // Save to history if conversation history is available
+        if (conversationHistory) {
+            await conversationHistory.addMessage(targetPhone, `[Voice: ${message}]`, 'me');
+        }
+
+        stats.voiceMessagesSent++;
+        lastVoiceMessageSent = {
+            message,
+            timestamp: new Date(),
+            phoneNumber: targetPhone,
+            type: 'manual_voice',
+            voiceFile: voiceResult.filename,
+            serviceType: 'primary'
+        };
+
+        res.json({
+            success: true,
+            result,
+            voiceFile: voiceResult.filename,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Error sending manual voice message:', error);
         stats.errors++;
         res.status(500).json({ error: error.message });
     }

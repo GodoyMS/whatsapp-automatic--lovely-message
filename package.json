@@ -7,7 +7,8 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "npx puppeteer browsers install chrome --force"
+    "postinstall": "npx puppeteer browsers install chrome --force",
+    "voice-test": "node src/voiceGenerator.js"
   },
   "keywords": [
     "whatsapp",
@@ -19,6 +20,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.21.0",
     "@sparticuz/chromium": "^141.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -26,6 +28,7 @@
     "fs-extra": "^11.2.0",
     "helmet": "^7.1.0",
     "node-cron": "^3.0.3",
+    "node-fetch": "^2.7.0",
     "openai": "^4.24.1",
     "puppeteer": "^24.28.0",
     "puppeteer-core": "^24.28.0",

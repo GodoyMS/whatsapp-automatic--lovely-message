@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const logger = require('./logger');
@@ -230,6 +230,83 @@ class WhatsAppService {
             return result;
         } catch (error) {
             logger.error(`Error sending message to ${phoneNumber}:`, error);
+            throw error;
+        }
+    }
+
+    async sendVoiceMessage(phoneNumber, audioFilePath) {
+        try {
+            if (!this.isReady) {
+                throw new Error('WhatsApp client is not ready');
+            }
+
+            const chatId = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+            
+            logger.info(`Sending voice message to ${phoneNumber}`);
+            
+            // Create MessageMedia from audio file
+            const media = MessageMedia.fromFilePath(audioFilePath);
+            media.mimetype = 'audio/ogg; codecs=opus'; // Standard voice note format
+            
+            // Set as voice note (PTT - Push To Talk)
+            media.ptt = true;
+            
+            // Remove the filename to make it appear as a voice note
+            delete media.filename;
+            
+            // Send as voice note
+            const result = await this.client.sendMessage(chatId, media);
+            
+            logger.info(`Voice message sent successfully to ${phoneNumber}`);
+            
+            return result;
+        } catch (error) {
+            logger.error(`Error sending voice message to ${phoneNumber}:`, error);
+            
+            // Fallback: try with original mimetype
+            try {
+                logger.info(`Retrying voice message with MP3 format...`);
+                const media = MessageMedia.fromFilePath(audioFilePath);
+                media.mimetype = 'audio/mpeg';
+                media.ptt = true; // Set as voice note
+                delete media.filename;
+                
+                const result = await this.client.sendMessage(chatId, media);
+                logger.info(`Voice message sent successfully (fallback) to ${phoneNumber}`);
+                return result;
+            } catch (fallbackError) {
+                logger.error(`Fallback voice message also failed:`, fallbackError);
+                throw error; // Throw original error
+            }
+        }
+    }
+
+    async sendMessageWithVoice(phoneNumber, textMessage, audioFilePath) {
+        try {
+            if (!this.isReady) {
+                throw new Error('WhatsApp client is not ready');
+            }
+
+            logger.info(`Sending text + voice message to ${phoneNumber}`);
+            
+            // Send text message first
+            const textResult = await this.sendMessage(phoneNumber, textMessage);
+            
+            // Wait a moment before sending voice
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Send voice message with caption
+            const voiceResult = await this.sendVoiceMessage(phoneNumber, audioFilePath, '🎤 Mensaje de voz');
+            
+            logger.info(`Text + voice message sent successfully to ${phoneNumber}`);
+            
+            return {
+                textResult,
+                voiceResult,
+                success: true
+            };
+        } catch (error) {
+            logger.error(`Error sending text + voice message to ${phoneNumber}:`, error);
             throw error;
         }
     }

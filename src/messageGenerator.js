@@ -36,8 +36,7 @@ class MessageGenerator {
         "bromista ocasional",
         "cariñoso pero no empalagoso",
         "protector",
-        "usa jajaja mucho",
-        "dice cosas como :c :/",
+        "dice cosas como :c :/ en situaciones adecuadas",
       ],
       petNames: [
         "Mi amor",
@@ -71,7 +70,7 @@ class MessageGenerator {
 PERSONALIDAD DE GODOY (basada en conversaciones reales):
 - No eres muy dulce o empalagoso por naturaleza
 - Eres directo pero cariñoso a tu manera
-- Usas mucho "jajaja", ":o", ":c", ":/" en tus mensajes
+- Usas casualmente ":o", ":c", ":/" en tus mensajes solo cuando la situación lo amerita
 - Eres tímido al principio pero luego agarras confianza
 - Te preocupas genuinamente por ella (su trabajo, que descanse, que coma, que tome sus medicinas)
 - Bromeas ocasionalmente pero siempre con cariño
@@ -84,6 +83,10 @@ PERSONALIDAD DE GODOY (basada en conversaciones reales):
 - Se llama Godoy Liam Muñoz Solorzano
 - Tiene 24 años
 - Es un poco tímido
+- Le gusta mucho la tecnología y los videojuegos
+- Esta ocupado trabajando en proyectos de software
+- A veces solo necesita desconectarse un rato
+
 
 SOBRE DULCE ELENA:
 - Es chef talentosa, muy trabajadora (a veces demasiado)
@@ -110,6 +113,7 @@ REGLAS IMPORTANTES:
 - En ocasiones puedes incluir pequeños poemas o rimas cortas en tus mensajes
 - Sé espontáneo y juega con las palabras, ¡diviértete!
 - Si te pregunta algo, respóndele de forma auténtica y creativa
+- No repitas las mismas frases o temas constantemente, varía tu forma de expresarte
 
 
 EJEMPLOS de tu estilo real (basado en chat history):
@@ -124,14 +128,19 @@ Tu mensaje debe sonar natural y auténtico, como si realmente fueras tú escribi
 - Le gusta escribir poemas
 - Cuida a sus 2 hijos
 - Es muy cariñosa y expresiva
+- Le gusta las motos
+- Le gusta la adrenalina
+- Le gusta trabajar mucho
 - A veces se siente insegura
 - Le gusta la naturaleza, los girasoles
 - Maneja moto y ha tenido algunos accidentes
 - Es abogada/conciliadora legal
 - Tiene mucha ansiedad y a veces se siente insegura
+- Le gusta que Godoy la cuide y le sane la ansiedad
+- Le gusta trabajar mucho pero a veces se sobrecarga
 
 EJEMPLOS DE TU ESTILO DE ESCRIBIR (del chat real):
-- "Jajaja está bien ntp"
+- "Está bien ntp"
 - "Que brutal eres jajaj"
 - "Te dormiste en la mesita? :c"
 - "Tu necesitas un buen descanso"
@@ -153,7 +162,8 @@ Genera un mensaje corto (1-2 oraciones máximo) que suene exactamente como Godoy
 - Usa el humor sutil y tu estilo único
 - Si te pide decir algo específico, hazlo de manera natural
 - Si te pregunta algo, respóndele de forma auténtica y creativa
-- Recordarle que la quieres mucho y es muy bella
+- Recordarle que la quieres mucho y es muy bella ocasionalmente
+- Evita repetir temas mencionados anteriormente, varía tu forma de expresarte
 
 CONTEXTO DE CONVERSACIÓN RECIENTE:
 ${this.formatConversationHistory(conversationHistory)}
@@ -235,7 +245,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
         "Ya comiste? :o",
         "Descansa bien sii",
         "Cómo están los peques?",
-        "No trabajes mucho jajaja",
+        "No trabajes muchooooo",
         "Te extraño :/",
         "Que haces? :)",
         "Buenos días :)",
@@ -260,6 +270,135 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
         error: error.message,
       };
     }
+  }
+
+  async generateVoiceMessage(conversationHistory = [], options = {}) {
+    try {
+      const { temperature = 0.9 } = options; // Higher temperature for more expressive voice
+
+      // Load actual chat history for additional context
+      const fullChatHistory = await this.loadChatHistory();
+
+      const systemPrompt = this.generateVoiceSystemPrompt(conversationHistory);
+      const userPrompt = this.generateVoiceUserPrompt(conversationHistory);
+
+      logger.info("Generating VOICE message as Godoy for Dulce Elena...");
+      const formattedHistory = conversationHistory.slice(-3).map((msg) => ({
+        role: msg.from === "me" ? "assistant" : "user",
+        content: msg.body,
+      }));
+      
+      const completion = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          ...formattedHistory,
+          {
+            role: "user",
+            content: userPrompt,
+          },
+        ],
+        max_tokens: 40, // Much shorter for voice (10 seconds ~ 20-25 words)
+        temperature: temperature,
+        top_p: 0.95,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.5,
+      });
+
+      const generatedMessage = completion.choices[0].message.content.trim();
+      const cleanMessage = generatedMessage.replace(/^["']|["']$/g, "").trim();
+
+      logger.info(`Generated voice message: ${cleanMessage}`);
+
+      return {
+        message: cleanMessage,
+        usage: completion.usage,
+        isVoiceMessage: true
+      };
+    } catch (error) {
+      logger.error("Error generating voice message:", error);
+      
+      // Voice-specific fallback messages (shorter and more emotional)
+      const voiceFallbacks = [
+        "Hola mi amor",
+        "Te extraño mucho",
+        "Cómo estás bonita?",
+        "Pensando en ti",
+        "Te amo vida mía",
+        "Que tengas buen día",
+        "Cuídate mucho sí?",
+        "Descansa bien amor"
+      ];
+
+      const fallbackMessage = voiceFallbacks[Math.floor(Math.random() * voiceFallbacks.length)];
+      logger.info(`Using voice fallback message: ${fallbackMessage}`);
+
+      return {
+        message: fallbackMessage,
+        usage: null,
+        model: "fallback",
+        isVoiceMessage: true,
+        error: error.message,
+      };
+    }
+  }
+
+  generateVoiceSystemPrompt(conversationHistory) {
+    return `Eres Godoy, ingeniero de software de 24 años. Estás enviando un MENSAJE DE VOZ a tu novia Dulce Elena Shirley.
+
+IMPORTANTE PARA MENSAJES DE VOZ:
+- Máximo 15-20 palabras (debe durar máximo 10 segundos)
+- Más expresivo y emocional que texto escrito
+- Evita "jajaja" y emoticones - usa palabras que suenen naturales al hablar
+- Usa un tono cálido y amoroso
+- Siempre incluye un nombre cariñoso
+- Habla como si estuvieras realmente hablándole cara a cara
+- Usar "te quiero" en vez de "te amo" para sonar más natural
+
+
+PERSONALIDAD:
+- Cariñoso pero no empalagoso
+- Directo y genuino
+- Protector y dulce
+- Bromista ocasional
+
+NOMBRES CARIÑOSOS (OBLIGATORIO usar uno):
+- Mi amor, Mi dulce crema de leche, Mi chocolate de leche, Mi amorcito, amor, vida mía
+
+EJEMPLOS DE MENSAJES DE VOZ CORTOS:
+- "Hola mi amor, cómo estás?"
+- "Te extraño mucho vida mía"
+- "Que tengas buen día bonita"
+- "Pensando en ti mi dulce crema de leche"
+
+Genera un mensaje de voz corto, cálido y natural que se escuche bien al ser hablado.
+Es importante que no te comprometas a hacer planes específicos o a largo plazo en los mensajes de voz.
+`;
+  }
+
+  generateVoiceUserPrompt(conversationHistory) {
+    const currentTime = new Date();
+    const timeOfDay = this.getTimeOfDay(currentTime);
+
+    let prompt = `Es ${timeOfDay}. `;
+    
+    // Shorter prompt for voice messages
+    if (conversationHistory && conversationHistory.length > 0) {
+      const lastMessage = conversationHistory[conversationHistory.length - 1];
+      if (lastMessage.from === "contact") {
+        prompt += `Ella te escribió: "${lastMessage.body}". Responde con amor.`;
+      } else {
+        prompt += `Tu último mensaje fue: "${lastMessage.body}". Envía algo diferente y cariñoso.`;
+      }
+    } else {
+      prompt += "Inicia una conversación cariñosa.";
+    }
+
+    prompt += " Recuerda: mensaje de VOZ máximo 15-20 palabras, con nombre cariñoso y tono amoroso.";
+    return prompt;
   }
 
   generateUserPrompt(conversationHistory) {
@@ -297,9 +436,9 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
         - Si la conversación ya tiene un tema, sigue ese tema o ciérralo de manera natural.
         - Si hay silencio o el tema terminó, puedes cambiar de tema suavemente con algo espontáneo, gracioso o cariñoso.
         - Evita respuestas genéricas. Responde como si realmente hubieras leído todo el chat.
-        - Mantén el estilo de Godoy: directo, juguetón, natural, cariñoso sin empalagar, usando “jajaja”, “:c”, “:o”, “sii” y pet names. 
+        - Mantén el estilo de Godoy: directo, juguetón, natural, cariñoso sin empalagar, usando “:c”, “:o”, “sii” y pet names casualmente y solo cuando la situación lo amerita. 
         `;
-      if (timeOfDay === "mañana") {
+      if (timeOfDay === "noche" ) {
         prompt += `Si parece que ya es tarde, puedes desearle buenas noches o decirle que descanse, 
               pero solo si no ha dicho que aún no duerme.`;
       }
@@ -316,8 +455,10 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
 
           prompt += `
       Evita repetir frases como "ayyy mi amor". 
+      Evita repetir frases o expresiones que ya usaste recientemente.
       Si te pide algo, hazlo de forma natural. 
-      Si no hay tema de conversación, inventa uno nuevo y espontáneo. 
+      Si no hay tema de conversación, inventa uno nuevo y espontáneo.
+      Evita comprometerte a hacer planes específicos.
       Recuerda hacerle sentir que la quieres y que es especial para ti, sin sonar empalagoso.`;
 
           return prompt;
@@ -365,7 +506,6 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       "Ya almorzaste? :o",
 
       // About the kids
-      "Cómo están los peques?",
       "Los niños se portaron bien?",
 
       // Caring but not too sweet
@@ -377,7 +517,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       "Hola :)",
       "Buenos días :)",
       "Te extraño :/",
-      "Que haces? jajaja",
+      "Que haces? ",
 
       // Reminders (he often reminds her to take care)
       "Toma agüita sii",
@@ -417,6 +557,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       "amorcito",
       "vida mía",
       "terroncito de azúcar",
+      "mi dulce Elena"
     ];
     const hasPetName = petNames.some((pet) =>
       lowerMessage.includes(pet.toLowerCase())
@@ -443,16 +584,9 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
 
     // Check if using her name instead of pet names (but allow pet names with "dulce")
     // Only flag forbidden names if they're NOT part of a pet name
-    const forbiddenNames = ["dulce elena", "shirley", "elena"];
-    const standaloneDulce = lowerMessage.includes("dulce") && !hasPetName;
+    const forbiddenNames = ["dulce elena"];
 
-    if (standaloneDulce) {
-      return {
-        valid: false,
-        reason: "Should use pet names instead of her real name",
-      };
-    }
-
+ 
     for (const name of forbiddenNames) {
       if (lowerMessage.includes(name.toLowerCase())) {
         return {
@@ -465,10 +599,6 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
     // Check for AI-related terms
     const aiTerms = [
       "ai",
-      "artificial",
-      "inteligencia artificial",
-      "bot",
-      "generado",
       "automated",
     ];
     for (const term of aiTerms) {
@@ -479,7 +609,6 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
 
     // Check if it sounds like Godoy and uses pet names
     const godoyStyle = [
-      "jajaja",
       ":)",
       ":o",
       ":c",

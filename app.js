@@ -4,6 +4,9 @@ const cors = require('cors');
 const logger = require('./src/logger');
 const WhatsAppService = require('./src/whatsappService');
 const AlternativeWhatsAppService = require('./src/alternativeWhatsAppService');
+const MessageGenerator = require('./src/messageGenerator');
+const ConversationHistory = require('./src/conversationHistory');
+const CronScheduler = require('./src/cronScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +18,164 @@ app.use(express.json());
 // Global variables
 let whatsappService = null;
 let isUsingAlternative = false;
+let messageGenerator = null;
+let conversationHistory = null;
+let cronScheduler = null;
+let isAutomationInitialized = false;
+
+// Configuration
+const targetPhoneNumber = process.env.TARGET_PHONE_NUMBER;
+const messageInterval = parseInt(process.env.MESSAGE_INTERVAL_SECONDS) || 10;
+const stats = {
+    messagesSent: 0,
+    errors: 0,
+    startTime: new Date()
+};
+let lastMessageSent = null;
+
+// Automatic message sending function
+async function sendAutomaticMessage() {
+    try {
+        if (!whatsappService || !whatsappService.isReady) {
+            logger.warn('WhatsApp service is not ready for automatic message');
+            return null;
+        }
+
+        if (!targetPhoneNumber) {
+            throw new Error('Target phone number not configured');
+        }
+
+        logger.info('Sending automatic message...');
+
+        // Update conversation history from WhatsApp (only for primary service)
+        if (!isUsingAlternative) {
+            try {
+                const whatsappMessages = await whatsappService.getMessages(targetPhoneNumber, 10);
+                await conversationHistory.updateHistoryFromWhatsApp(targetPhoneNumber, whatsappMessages);
+            } catch (error) {
+                logger.warn('Failed to update history from WhatsApp:', error.message);
+            }
+        }
+
+        // Get recent conversation history
+        const conversationHistoryData = await conversationHistory.getHistory(targetPhoneNumber, 10);
+
+        // Generate message
+        const messageOptions = {
+            style: process.env.MESSAGE_STYLE || 'friendly',
+            language: process.env.MESSAGE_LANGUAGE || 'spanish',
+            maxTokens: parseInt(process.env.MAX_TOKENS) || 150,
+            temperature: parseFloat(process.env.TEMPERATURE) || 0.8
+        };
+
+        const result = await messageGenerator.generateMessage(conversationHistoryData, messageOptions);
+
+        if (!result.message) {
+            throw new Error('Failed to generate message');
+        }
+
+        // Validate message
+        const validation = messageGenerator.validateMessage(result.message);
+        if (!validation.valid) {
+            throw new Error(`Invalid message: ${validation.reason}`);
+        }
+
+        // Send message
+        const sendResult = await whatsappService.sendMessage(targetPhoneNumber, result.message);
+
+        // Save to history
+        await conversationHistory.addMessage(targetPhoneNumber, result.message, 'me');
+
+        // Update stats
+        stats.messagesSent++;
+        lastMessageSent = {
+            message: result.message,
+            timestamp: new Date(),
+            phoneNumber: targetPhoneNumber,
+            type: 'automatic',
+            openaiUsage: result.usage,
+            serviceType: isUsingAlternative ? 'alternative' : 'primary'
+        };
+
+        logger.info(`Automatic message sent successfully: "${result.message}"`);
+        return lastMessageSent;
+
+    } catch (error) {
+        logger.error('Error sending automatic message:', error);
+        stats.errors++;
+        throw error;
+    }
+}
+
+// Initialize automation services
+async function initializeAutomation() {
+    try {
+        if (!process.env.OPENAI_API_KEY) {
+            logger.warn('OPENAI_API_KEY not configured - automatic messaging disabled');
+            return false;
+        }
+
+        if (!targetPhoneNumber) {
+            logger.warn('TARGET_PHONE_NUMBER not configured - automatic messaging disabled');
+            return false;
+        }
+
+        logger.info('Initializing automation services...');
+
+        // Initialize services
+        messageGenerator = new MessageGenerator(
+            process.env.OPENAI_API_KEY,
+            process.env.OPENAI_MODEL || 'gpt-4o-mini'
+        );
+
+        conversationHistory = new ConversationHistory('./data');
+        cronScheduler = new CronScheduler();
+
+        // Setup scheduled automatic messages
+        cronScheduler.scheduleAutoMessages(
+            messageInterval,
+            async () => {
+                if (whatsappService && whatsappService.isReady) {
+                    try {
+                        await sendAutomaticMessage();
+                    } catch (error) {
+                        logger.error('Scheduled message failed:', error);
+                    }
+                } else {
+                    logger.debug('Skipping auto message - WhatsApp not ready');
+                }
+            }
+        );
+
+        // Setup daily history sync (only for primary service)
+        if (!isUsingAlternative) {
+            cronScheduler.scheduleHistorySync(async () => {
+                if (whatsappService && whatsappService.isReady) {
+                    try {
+                        const messages = await whatsappService.getMessages(targetPhoneNumber, 20);
+                        await conversationHistory.updateHistoryFromWhatsApp(targetPhoneNumber, messages);
+                        logger.info('Daily history sync completed');
+                    } catch (error) {
+                        logger.error('Daily history sync failed:', error);
+                    }
+                } else {
+                    logger.debug('Skipping history sync - WhatsApp not ready');
+                }
+            });
+        }
+
+        // Start scheduled jobs
+        cronScheduler.startAll();
+
+        isAutomationInitialized = true;
+        logger.info(`Automation initialized successfully! Messages will be sent every ${messageInterval} seconds to ${targetPhoneNumber}`);
+        
+        return true;
+    } catch (error) {
+        logger.error('Failed to initialize automation:', error);
+        return false;
+    }
+}
 
 // Initialize WhatsApp with fallback
 async function initializeWhatsApp() {
@@ -39,20 +200,72 @@ async function initializeWhatsApp() {
             };
         }
     }
+
+    // Check for WhatsApp readiness periodically
+    const checkWhatsAppReady = async () => {
+        if (whatsappService && whatsappService.isReady && !isAutomationInitialized) {
+            logger.info('WhatsApp ready, initializing automation...');
+            await initializeAutomation();
+        } else if (!isAutomationInitialized) {
+            // Check again in 2 seconds
+            setTimeout(checkWhatsAppReady, 2000);
+        }
+    };
+
+    // Start checking for readiness
+    setTimeout(checkWhatsAppReady, 1000);
 }
 
 // Routes
 app.get('/', (req, res) => {
+    const automationStatus = isAutomationInitialized ? 
+        `‚úÖ Active (${messageInterval}s interval)` : 
+        '‚ùå Not initialized';
+    
     res.send(`
         <html>
         <head><title>WhatsApp Automation</title></head>
         <body style="font-family: Arial; text-align: center; padding: 50px;">
-            <h1>Ì¥ñ WhatsApp Automation System</h1>
-            <p>Service Type: ${isUsingAlternative ? 'Alternative' : 'Primary'}</p>
-            <div>
+            <h1>üì± WhatsApp Automation System</h1>
+            <p><strong>Service Type:</strong> ${isUsingAlternative ? 'Alternative' : 'Primary'}</p>
+            <p><strong>Target:</strong> ${targetPhoneNumber || 'Not configured'}</p>
+            <p><strong>Automation:</strong> ${automationStatus}</p>
+            <p><strong>Messages Sent:</strong> ${stats.messagesSent}</p>
+            <p><strong>Last Message:</strong> ${lastMessageSent ? lastMessageSent.timestamp.toLocaleString() : 'None'}</p>
+            <div style="margin: 20px;">
                 <a href="/status" style="margin: 10px; padding: 10px; background: #007cba; color: white; text-decoration: none;">Status</a>
                 <a href="/qr" style="margin: 10px; padding: 10px; background: #25d366; color: white; text-decoration: none;">QR Code</a>
+                <a href="/history" style="margin: 10px; padding: 10px; background: #8e44ad; color: white; text-decoration: none;">History</a>
             </div>
+            <div style="margin: 20px;">
+                <button onclick="sendTestMessage()" style="margin: 5px; padding: 10px; background: #e74c3c; color: white; border: none; cursor: pointer;">Send Test Message</button>
+                <button onclick="toggleScheduler()" style="margin: 5px; padding: 10px; background: #f39c12; color: white; border: none; cursor: pointer;">Toggle Scheduler</button>
+            </div>
+            <script>
+                async function sendTestMessage() {
+                    try {
+                        const response = await fetch('/send-auto-message', { method: 'POST' });
+                        const result = await response.json();
+                        alert(result.success ? 'Message sent!' : 'Error: ' + result.error);
+                        location.reload();
+                    } catch (error) {
+                        alert('Error: ' + error.message);
+                    }
+                }
+                
+                async function toggleScheduler() {
+                    try {
+                        const action = prompt('Enter "start" or "stop":');
+                        if (action === 'start' || action === 'stop') {
+                            const response = await fetch('/schedule/' + action, { method: 'POST' });
+                            const result = await response.json();
+                            alert(result.message);
+                        }
+                    } catch (error) {
+                        alert('Error: ' + error.message);
+                    }
+                }
+            </script>
         </body>
         </html>
     `);
@@ -61,11 +274,191 @@ app.get('/', (req, res) => {
 app.get('/status', async (req, res) => {
     try {
         const status = whatsappService ? whatsappService.getStatus() : { error: 'Not initialized' };
+        const clientInfo = whatsappService && !isUsingAlternative ? await whatsappService.getClientInfo() : null;
+        const conversationStats = conversationHistory ? await conversationHistory.getConversationStats(targetPhoneNumber) : null;
+        const cronStats = cronScheduler ? cronScheduler.getStats() : null;
+
         res.json({
             service: isUsingAlternative ? 'alternative' : 'primary',
             whatsapp: status,
+            client: clientInfo,
+            conversation: conversationStats,
+            scheduler: cronStats,
+            automation: {
+                initialized: isAutomationInitialized,
+                target: targetPhoneNumber,
+                interval: `${messageInterval} seconds`,
+                lastMessage: lastMessageSent
+            },
+            stats,
             timestamp: new Date().toISOString()
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send manual message
+app.post('/send-message', async (req, res) => {
+    try {
+        const { message, phoneNumber } = req.body;
+        
+        if (!message) {
+            return res.status(400).json({ error: 'Message is required' });
+        }
+
+        if (!whatsappService || !whatsappService.isReady) {
+            return res.status(503).json({ error: 'WhatsApp service not ready' });
+        }
+
+        const targetPhone = phoneNumber || targetPhoneNumber;
+        if (!targetPhone) {
+            return res.status(400).json({ error: 'Phone number is required' });
+        }
+
+        const result = await whatsappService.sendMessage(targetPhone, message);
+        
+        // Save to history if conversation history is available
+        if (conversationHistory) {
+            await conversationHistory.addMessage(targetPhone, message, 'me');
+        }
+
+        stats.messagesSent++;
+        lastMessageSent = {
+            message,
+            timestamp: new Date(),
+            phoneNumber: targetPhone,
+            type: 'manual',
+            serviceType: isUsingAlternative ? 'alternative' : 'primary'
+        };
+
+        res.json({
+            success: true,
+            result,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Error sending manual message:', error);
+        stats.errors++;
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send automatic message (manual trigger)
+app.post('/send-auto-message', async (req, res) => {
+    try {
+        if (!isAutomationInitialized) {
+            return res.status(503).json({ error: 'Automation not initialized' });
+        }
+
+        const result = await sendAutomaticMessage();
+        res.json({
+            success: true,
+            result,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Error sending automatic message:', error);
+        stats.errors++;
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get conversation history
+app.get('/history/:phoneNumber?', async (req, res) => {
+    try {
+        if (!conversationHistory) {
+            return res.status(503).json({ error: 'Conversation history not available' });
+        }
+
+        const phoneNumber = req.params.phoneNumber || targetPhoneNumber;
+        const limit = parseInt(req.query.limit) || 20;
+
+        const history = await conversationHistory.getHistory(phoneNumber, limit);
+        const conversationStats = await conversationHistory.getConversationStats(phoneNumber);
+
+        res.json({
+            phoneNumber,
+            history,
+            stats: conversationStats
+        });
+    } catch (error) {
+        logger.error('Error getting conversation history:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update schedule
+app.post('/schedule/update', async (req, res) => {
+    try {
+        const { intervalSeconds } = req.body;
+
+        if (!intervalSeconds || intervalSeconds < 1) {
+            return res.status(400).json({ error: 'Invalid interval seconds (must be >= 1)' });
+        }
+
+        if (!cronScheduler) {
+            return res.status(503).json({ error: 'Scheduler not available' });
+        }
+
+        // Remove existing job
+        cronScheduler.removeJob('autoMessages');
+
+        // Create new job
+        cronScheduler.scheduleAutoMessages(
+            intervalSeconds,
+            async () => {
+                if (whatsappService && whatsappService.isReady) {
+                    try {
+                        await sendAutomaticMessage();
+                    } catch (error) {
+                        logger.error('Scheduled message failed:', error);
+                    }
+                } else {
+                    logger.debug('Skipping auto message - WhatsApp not ready');
+                }
+            }
+        );
+
+        // Start the new job
+        cronScheduler.startJob('autoMessages');
+
+        logger.info(`Schedule updated to send messages every ${intervalSeconds} seconds`);
+
+        res.json({
+            success: true,
+            newInterval: `${intervalSeconds} seconds`,
+            message: 'Schedule updated successfully'
+        });
+    } catch (error) {
+        logger.error('Error updating schedule:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Start scheduler
+app.post('/schedule/start', async (req, res) => {
+    try {
+        if (!cronScheduler) {
+            return res.status(503).json({ error: 'Scheduler not available' });
+        }
+
+        cronScheduler.startJob('autoMessages');
+        res.json({ success: true, message: 'Scheduler started' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Stop scheduler
+app.post('/schedule/stop', async (req, res) => {
+    try {
+        if (!cronScheduler) {
+            return res.status(503).json({ error: 'Scheduler not available' });
+        }
+
+        cronScheduler.stopJob('autoMessages');
+        res.json({ success: true, message: 'Scheduler stopped' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -92,7 +485,7 @@ app.get('/qr', (req, res) => {
                 <html>
                 <head><title>Alternative Service</title></head>
                 <body style="font-family: Arial; text-align: center; padding: 50px;">
-                    <h1>Ì¥Ñ Alternative WhatsApp Service</h1>
+                    <h1>ÔøΩÔøΩÔøΩ Alternative WhatsApp Service</h1>
                     <p>Status: ${qrData.data}</p>
                     <p>Primary Puppeteer service not available in this environment.</p>
                     <p><a href="/status">Check Status</a></p>
@@ -118,7 +511,7 @@ app.get('/qr', (req, res) => {
             <html>
             <head><title>WhatsApp QR Code</title><meta http-equiv="refresh" content="10"></head>
             <body style="font-family: Arial; text-align: center; padding: 50px;">
-                <h1>Ì≥± WhatsApp QR Code</h1>
+                <h1>ÔøΩÔøΩÔøΩ WhatsApp QR Code</h1>
                 <img src="${qrData.image}" style="max-width: 300px; border: 2px solid #ccc;">
                 <p>Scan with WhatsApp on your phone</p>
                 <p><a href="/status">Check Status</a></p>
@@ -148,9 +541,9 @@ async function start() {
         
         // Start Express server
         app.listen(PORT, '0.0.0.0', () => {
-            console.log(`Ìºê Server running on port ${PORT}`);
-            console.log(`Ì≥± QR Code: http://localhost:${PORT}/qr`);
-            console.log(`Ì≥ä Status: http://localhost:${PORT}/status`);
+            console.log(`ÔøΩÔøΩÔøΩ Server running on port ${PORT}`);
+            console.log(`ÔøΩÔøΩÔøΩ QR Code: http://localhost:${PORT}/qr`);
+            console.log(`ÔøΩÔøΩÔøΩ Status: http://localhost:${PORT}/status`);
             logger.info(`Server started on port ${PORT}`);
         });
         

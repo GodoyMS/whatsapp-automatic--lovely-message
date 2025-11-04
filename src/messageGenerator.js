@@ -311,7 +311,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
           .map(() =>
             this.generateMessage(conversationHistory, {
               ...options,
-              temperature: (options.temperature || 0.8) + Math.random() * 0.2, // Slight variation
+              temperature: (options.temperature || 0.8), // Slight variation
             })
           )
       );
@@ -365,7 +365,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       return { valid: false, reason: "Message is empty or not a string" };
     }
 
-    if (message.length > 200) {
+    if (message.length > 300) {
       return { valid: false, reason: "Message is too long for Godoy's style" };
     }
 
@@ -383,6 +383,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       "mi chocolate de leche",
       "amorcito",
       "vida mía",
+      "terroncito de azúcar",
     ];
     const hasPetName = petNames.some((pet) =>
       lowerMessage.includes(pet.toLowerCase())

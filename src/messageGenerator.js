@@ -283,6 +283,8 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       prompt += " Considera preguntar cómo durmió o desearle buen día.";
     } else if (timeOfDay === "tarde") {
       prompt += " Puedes preguntar cómo va su día o si ya almorzó.";
+    } else if (timeOfDay === "prenoche") {
+      prompt += " Considera preguntar cómo le fue en el día, y que está haciendo ahora ";
     } else if (timeOfDay === "noche") {
       prompt +=
         " Considera preguntar cómo le fue en el día o desearle buenas noches.";
@@ -295,7 +297,8 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
     const hour = date.getHours();
     if (hour < 6) return "madrugada";
     if (hour < 12) return "mañana";
-    if (hour < 18) return "tarde";
+    if(hour<18) return "tarde"
+    if (hour < 21) return "prenoche";
     return "noche";
   }
 

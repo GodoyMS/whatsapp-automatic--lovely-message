@@ -276,52 +276,51 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       'IMPORTANTE: Debes usar uno de estos nombres cariñosos: "Mi amor", "Mi dulce crema de leche", "Mi chocolate de leche", "Mi amorcito", "amor", "vida mía". NUNCA uses su nombre real. Tambien crea apodos cariñosos y espontaneos de vez en cuando ';
 
     if (conversationHistory && conversationHistory.length > 0) {
+      const recentMessages = conversationHistory.slice(-5);
       const lastMessage = conversationHistory[conversationHistory.length - 1];
+      const fromContact = lastMessage.from === "contact";
+
       const timeSinceLastMessage = Date.now() - lastMessage.timestamp;
       const hoursSince = Math.floor(timeSinceLastMessage / (1000 * 60 * 60));
 
       if (hoursSince > 6) {
         prompt += `Han pasado ${hoursSince} horas desde el último mensaje. `;
       }
-
-      if (lastMessage.from === "contact") {
-        prompt += `Su último mensaje fue: "${lastMessage.body}". 
-Responde de manera natural como Godoy lo haría, reaccionando directamente a lo que ella dijo. 
-Si su mensaje expresa emoción, ansiedad, tristeza o alegría, responde acorde a su tono pero manteniendo tu estilo (directo, cariñoso, un poco gracioso). 
-No des consejos largos, responde como si realmente estuvieras chateando. `;
-      } else {
-        prompt += `Tu último mensaje fue: "${lastMessage.body}". Envía algo diferente y genuino.`;
+      prompt += `Aquí está el contexto de la conversación reciente:\n`;
+      recentMessages.forEach((msg) => {
+        const speaker = msg.from === "me" ? "Godoy" : "Ella";
+        prompt += `${speaker}: ${msg.body}\n`;
+      });
+      prompt += `
+        Responde de manera natural como Godoy lo haría, teniendo en cuenta el flujo completo de la conversación. 
+        - Si ella ha dicho varias cosas, responde considerando el tono general (cansada, feliz, triste, bromista, cariñosa, preocupada, etc).
+        - Si la conversación ya tiene un tema, sigue ese tema o ciérralo de manera natural.
+        - Si hay silencio o el tema terminó, puedes cambiar de tema suavemente con algo espontáneo, gracioso o cariñoso.
+        - Evita respuestas genéricas. Responde como si realmente hubieras leído todo el chat.
+        - Mantén el estilo de Godoy: directo, juguetón, natural, cariñoso sin empalagar, usando “jajaja”, “:c”, “:o”, “sii” y pet names. 
+        `;
+      if (timeOfDay === "mañana") {
+        prompt += `Si parece que ya es tarde, puedes desearle buenas noches o decirle que descanse, 
+              pero solo si no ha dicho que aún no duerme.`;
       }
     } else {
-      prompt += "Inicia una conversación casual.";
+      prompt += `
+        No hay historial de conversación reciente. 
+        Inicia una charla de forma espontánea, divertida y natural como Godoy lo haría:
+        - Puedes bromear, saludar de manera tierna, o preguntar cómo va su día.
+        - Sé juguetón, cariñoso y un poco torpe en el buen sentido.
+        - No suenes como un bot ni demasiado formal.
+        - Recuerda mantener tu estilo: mensajes cortos, cálidos, naturales, con emoticones y humor sutil.
+        `;
     }
-    prompt +=
-      " Si te pide decir algo específico, hazlo de manera natural. Si te pregunta algo, respóndele de forma auténtica y creativa.";
-    prompt +=
-      " Si no hay tema de conversación, inventa uno nuevo espontáneamente. Recuerda decirle que la quieres mucho y que es muy bella.";
-    prompt += " Evita repetir frases como 'ayyy mi amor' o similares.";
-    if (timeOfDay === "noche" || timeOfDay === "madrugada") {
-      prompt +=
-        " Si parece que ya es tarde, puedes desearle buenas noches, pero solo si ella no dice que aún no duerme.";
-    } else {
-      prompt +=
-        " Evita desearle buenas noches o que descanse si no es apropiado por la hora.";
-    }
-    prompt +=
-      " Mantén siempre el tono natural, cálido y realista. Que suene como un chat real entre ustedes.";
-    // // Add specific contextual hints based on time
-    // if (timeOfDay === "mañana") {
-    //   prompt += " Considera preguntar cómo durmió o desearle buen día.";
-    // } else if (timeOfDay === "tarde") {
-    //   prompt += " Puedes preguntar cómo va su día o si ya almorzó.";
-    // } else if (timeOfDay === "prenoche") {
-    //   prompt += " Considera preguntar cómo le fue en el día, y que está haciendo ahora ";
-    // } else if (timeOfDay === "noche") {
-    //   prompt +=
-    //     " Considera preguntar cómo le fue en el día o desearle buenas noches.";
-    // }
 
-    return prompt;
+          prompt += `
+      Evita repetir frases como "ayyy mi amor". 
+      Si te pide algo, hazlo de forma natural. 
+      Si no hay tema de conversación, inventa uno nuevo y espontáneo. 
+      Recuerda hacerle sentir que la quieres y que es especial para ti, sin sonar empalagoso.`;
+
+          return prompt;
   }
 
   getTimeOfDay(date) {

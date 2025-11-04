@@ -206,7 +206,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
         temperature: temperature,
         top_p: 0.9,
         frequency_penalty: 0.6, // Reduce repetition
-        presence_penalty: 0.4, // Encourage new topics
+        presence_penalty: 0.6, // Encourage new topics
       });
 
       const generatedMessage = completion.choices[0].message.content.trim();
@@ -290,7 +290,14 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
     }
     prompt += " Si te pide decir algo específico, hazlo de manera natural. Si te pregunta algo, respóndele de forma auténtica y creativa";
     prompt += " Si no hay tema de conversación, inventa nuevos y espontáneos. Recuerda decirle que la quieres mucho y es muy bella. Tambien que es especial para mi";
-
+    prompt += " Evita repetir mucho 'ayyy mi amor' o frases similares.";
+    prompt += "\n";
+    prompt += "Si hay historial de conversación, manten el hilo de conversación pero sé espontáneo y juguetón. Siempre reacciona a lo que diga ella de forma autentica";
+    if(timeOfDay==="noche" || timeOfDay==="madrugada"){
+      prompt += " Considera desearle buenas noches y recordarle que descanse bien. Pero si te responde diciendo que aun no duerme, no insistas en que duerma aún.";
+    }else{
+      prompt += " Evita desarle buenas noches o que descanse.";
+    }
     // // Add specific contextual hints based on time
     // if (timeOfDay === "mañana") {
     //   prompt += " Considera preguntar cómo durmió o desearle buen día.";
@@ -311,7 +318,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
     if (hour < 6) return "madrugada";
     if (hour < 12) return "mañana";
     if(hour<18) return "tarde"
-    if (hour < 21) return "prenoche";
+    if (hour < 23) return "prenoche";
     return "noche";
   }
 

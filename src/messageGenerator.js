@@ -30,7 +30,6 @@ class MessageGenerator {
         "habla inglés",
         "estudió en India remotamente",
         "le gusta videojuegos",
-        
       ],
       myStyle: [
         "directo",
@@ -190,7 +189,10 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       const userPrompt = this.generateUserPrompt(conversationHistory);
 
       logger.info("Generating message as Godoy for Dulce Elena...");
-
+      const formattedHistory = conversationHistory.slice(-4).map((msg) => ({
+        role: msg.from === "me" ? "assistant" : "user",
+        content: msg.body,
+      }));
       const completion = await this.openai.chat.completions.create({
         model: this.model,
         messages: [
@@ -198,6 +200,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
             role: "system",
             content: systemPrompt,
           },
+          ...formattedHistory,
           {
             role: "user",
             content: userPrompt,
@@ -270,7 +273,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
 
     // Add pet name requirement
     prompt +=
-      'IMPORTANTE: Debes usar uno de estos nombres cariñosos: "Mi amor", "Mi dulce crema de leche", "Mi chocolate de leche", "Mi amorcito", "amor", "vida mía". NUNCA uses su nombre real. ';
+      'IMPORTANTE: Debes usar uno de estos nombres cariñosos: "Mi amor", "Mi dulce crema de leche", "Mi chocolate de leche", "Mi amorcito", "amor", "vida mía". NUNCA uses su nombre real. Tambien crea apodos cariñosos y espontaneos de vez en cuando ';
 
     if (conversationHistory && conversationHistory.length > 0) {
       const lastMessage = conversationHistory[conversationHistory.length - 1];
@@ -282,23 +285,30 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
       }
 
       if (lastMessage.from === "contact") {
-        prompt += `Su último mensaje fue: "${lastMessage.body}". Responde de manera natural como Godoy lo haría.`;
+        prompt += `Su último mensaje fue: "${lastMessage.body}". 
+Responde de manera natural como Godoy lo haría, reaccionando directamente a lo que ella dijo. 
+Si su mensaje expresa emoción, ansiedad, tristeza o alegría, responde acorde a su tono pero manteniendo tu estilo (directo, cariñoso, un poco gracioso). 
+No des consejos largos, responde como si realmente estuvieras chateando. `;
       } else {
         prompt += `Tu último mensaje fue: "${lastMessage.body}". Envía algo diferente y genuino.`;
       }
     } else {
       prompt += "Inicia una conversación casual.";
     }
-    prompt += " Si te pide decir algo específico, hazlo de manera natural. Si te pregunta algo, respóndele de forma auténtica y creativa";
-    prompt += " Si no hay tema de conversación, inventa nuevos y espontáneos. Recuerda decirle que la quieres mucho y es muy bella. Tambien que es especial para mi";
-    prompt += " Evita repetir mucho 'ayyy mi amor' o frases similares.";
-    prompt += "\n";
-    prompt += "Si hay historial de conversación, manten el hilo de conversación pero sé espontáneo y juguetón. Siempre reacciona a lo que diga ella de forma autentica";
-    if(timeOfDay==="noche" || timeOfDay==="madrugada"){
-      prompt += " Considera desearle buenas noches y recordarle que descanse bien. Pero si te responde diciendo que aun no duerme, no insistas en que duerma aún.";
-    }else{
-      prompt += " Evita desarle buenas noches o que descanse.";
+    prompt +=
+      " Si te pide decir algo específico, hazlo de manera natural. Si te pregunta algo, respóndele de forma auténtica y creativa.";
+    prompt +=
+      " Si no hay tema de conversación, inventa uno nuevo espontáneamente. Recuerda decirle que la quieres mucho y que es muy bella.";
+    prompt += " Evita repetir frases como 'ayyy mi amor' o similares.";
+    if (timeOfDay === "noche" || timeOfDay === "madrugada") {
+      prompt +=
+        " Si parece que ya es tarde, puedes desearle buenas noches, pero solo si ella no dice que aún no duerme.";
+    } else {
+      prompt +=
+        " Evita desearle buenas noches o que descanse si no es apropiado por la hora.";
     }
+    prompt +=
+      " Mantén siempre el tono natural, cálido y realista. Que suene como un chat real entre ustedes.";
     // // Add specific contextual hints based on time
     // if (timeOfDay === "mañana") {
     //   prompt += " Considera preguntar cómo durmió o desearle buen día.";
@@ -318,7 +328,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
     const hour = date.getHours();
     if (hour < 6) return "madrugada";
     if (hour < 12) return "mañana";
-    if(hour<18) return "tarde"
+    if (hour < 18) return "tarde";
     if (hour < 23) return "prenoche";
     return "noche";
   }
@@ -335,7 +345,7 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
           .map(() =>
             this.generateMessage(conversationHistory, {
               ...options,
-              temperature: (options.temperature || 0.8), // Slight variation
+              temperature: options.temperature || 0.8, // Slight variation
             })
           )
       );

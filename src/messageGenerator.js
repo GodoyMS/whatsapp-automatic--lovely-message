@@ -64,8 +64,12 @@ class MessageGenerator {
     }
   }
 
-  generateSystemPrompt(conversationHistory) {
+  generateSystemPrompt(conversationHistory, conversationContext = null) {
+    const contextInfo = conversationContext ? this.analyzeConversationContext(conversationContext) : '';
+    
     return `Eres Godoy (también conocido como Gms), un ingeniero de software de 24 años. Estás enviando un mensaje a tu novia Dulce Elena Shirley, con quien tienes una relación desde el 26 de septiembre.
+
+${contextInfo}
 
 PERSONALIDAD DE GODOY (basada en conversaciones reales):
 - No eres muy dulce o empalagoso por naturaleza
@@ -189,20 +193,39 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
 
   async generateMessage(conversationHistory = [], options = {}) {
     try {
-      const { maxTokens = 100, temperature = 0.8 } = options;
+      const { maxTokens = 100, temperature = 0.8, conversationContext = null } = options;
 
       // Load actual chat history for additional context
       const fullChatHistory = await this.loadChatHistory();
 
-      const systemPrompt = this.generateSystemPrompt(conversationHistory);
+      // Use enhanced conversation context if available
+      const enhancedContext = conversationContext || {
+        messages: conversationHistory,
+        hasHistory: conversationHistory.length > 0,
+        conversationFlow: { pattern: 'unknown', awaitingResponse: false }
+      };
 
-      const userPrompt = this.generateUserPrompt(conversationHistory);
+      const systemPrompt = this.generateSystemPrompt(enhancedContext.messages, enhancedContext);
+      const userPrompt = this.generateUserPrompt(enhancedContext.messages, enhancedContext);
 
       logger.info("Generating message as Godoy for Dulce Elena...");
-      const formattedHistory = conversationHistory.slice(-4).map((msg) => ({
-        role: msg.from === "me" ? "assistant" : "user",
-        content: msg.body,
-      }));
+      logger.debug(`Conversation pattern: ${enhancedContext.conversationFlow?.pattern || 'unknown'}`);
+      logger.debug(`Awaiting response: ${enhancedContext.conversationFlow?.awaitingResponse || false}`);
+      
+      // Format conversation history for OpenAI
+      const formattedHistory = enhancedContext.messages.slice(-10).map((msg) => {
+        // Handle both old and new message formats
+        const from = msg.from === 'me' || msg.from === 'outgoing' ? 'assistant' : 'user';
+        const content = msg.isVoiceMessage && msg.body.startsWith('[Voice:') 
+          ? msg.body.replace(/^\[Voice:\s*/, '').replace(/\]$/, '') 
+          : msg.body;
+        
+        return {
+          role: from,
+          content: content
+        };
+      });
+
       const completion = await this.openai.chat.completions.create({
         model: this.model,
         messages: [
@@ -274,19 +297,36 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
 
   async generateVoiceMessage(conversationHistory = [], options = {}) {
     try {
-      const { temperature = 0.9 } = options; // Higher temperature for more expressive voice
+      const { temperature = 0.9, conversationContext = null } = options; // Higher temperature for more expressive voice
 
       // Load actual chat history for additional context
       const fullChatHistory = await this.loadChatHistory();
 
-      const systemPrompt = this.generateVoiceSystemPrompt(conversationHistory);
-      const userPrompt = this.generateVoiceUserPrompt(conversationHistory);
+      // Use enhanced conversation context if available
+      const enhancedContext = conversationContext || {
+        messages: conversationHistory,
+        hasHistory: conversationHistory.length > 0,
+        conversationFlow: { pattern: 'unknown', awaitingResponse: false }
+      };
+
+      const systemPrompt = this.generateVoiceSystemPrompt(enhancedContext.messages, enhancedContext);
+      const userPrompt = this.generateVoiceUserPrompt(enhancedContext.messages, enhancedContext);
 
       logger.info("Generating VOICE message as Godoy for Dulce Elena...");
-      const formattedHistory = conversationHistory.slice(-3).map((msg) => ({
-        role: msg.from === "me" ? "assistant" : "user",
-        content: msg.body,
-      }));
+      logger.debug(`Voice conversation pattern: ${enhancedContext.conversationFlow?.pattern || 'unknown'}`);
+      
+      // Format conversation history for OpenAI - voice messages need less context
+      const formattedHistory = enhancedContext.messages.slice(-10).map((msg) => {
+        const from = msg.from === 'me' || msg.from === 'outgoing' ? 'assistant' : 'user';
+        const content = msg.isVoiceMessage && msg.body.startsWith('[Voice:') 
+          ? msg.body.replace(/^\[Voice:\s*/, '').replace(/\]$/, '') 
+          : msg.body;
+        
+        return {
+          role: from,
+          content: content
+        };
+      });
       
       const completion = await this.openai.chat.completions.create({
         model: this.model,
@@ -346,8 +386,12 @@ Escribe SOLO el mensaje, nada más. En español, como Godoy lo escribiría realm
     }
   }
 
-  generateVoiceSystemPrompt(conversationHistory) {
+  generateVoiceSystemPrompt(conversationHistory, conversationContext = null) {
+    const contextInfo = conversationContext ? this.analyzeConversationContext(conversationContext) : '';
+    
     return `Eres Godoy, ingeniero de software de 24 años. Estás enviando un MENSAJE DE VOZ a tu novia Dulce Elena Shirley.
+
+${contextInfo}
 
 IMPORTANTE PARA MENSAJES DE VOZ:
 - Máximo 15-20 palabras (debe durar máximo 10 segundos)
@@ -376,10 +420,11 @@ EJEMPLOS DE MENSAJES DE VOZ CORTOS:
 
 Genera un mensaje de voz corto, cálido y natural que se escuche bien al ser hablado.
 Es importante que no te comprometas a hacer planes específicos o a largo plazo en los mensajes de voz.
+No desear buenas noches o lo que tenga que ver con dormir en ningun momento.
 `;
   }
 
-  generateVoiceUserPrompt(conversationHistory) {
+  generateVoiceUserPrompt(conversationHistory, conversationContext = null) {
     const currentTime = new Date();
     const timeOfDay = this.getTimeOfDay(currentTime);
 
@@ -397,11 +442,50 @@ Es importante que no te comprometas a hacer planes específicos o a largo plazo 
       prompt += "Inicia una conversación cariñosa.";
     }
 
-    prompt += " Recuerda: mensaje de VOZ máximo 15-20 palabras, con nombre cariñoso y tono amoroso.";
+    prompt += " Recuerda: mensaje de VOZ máximo 15-20 palabras, con nombre cariñoso y tono amoroso. No desear buenas noches o lo que tenga que ver con dormir en ningun momento.";
     return prompt;
   }
 
-  generateUserPrompt(conversationHistory) {
+  analyzeConversationContext(conversationContext) {
+    if (!conversationContext || !conversationContext.conversationFlow) {
+      return '';
+    }
+
+    const flow = conversationContext.conversationFlow;
+    let contextInfo = '\nCONTEXTO DE LA CONVERSACIÓN:\n';
+
+    switch (flow.pattern) {
+      case 'monologue':
+        contextInfo += '- Has estado enviando mensajes sin respuesta. Mantén un tono cariñoso pero no insistente.\n';
+        break;
+      case 'responsive':
+        contextInfo += '- Ella ha estado respondiendo activamente. Mantén la conversación fluida.\n';
+        break;
+      case 'initiating':
+        contextInfo += '- Has estado iniciando la conversación. Varía tu approach.\n';
+        break;
+      case 'balanced':
+        contextInfo += '- La conversación ha sido equilibrada. Continúa naturalmente.\n';
+        break;
+    }
+
+    if (flow.awaitingResponse) {
+      contextInfo += '- Acabas de enviar un mensaje, es bueno esperar respuesta antes de continuar.\n';
+    }
+
+    if (flow.conversationAge) {
+      const hours = Math.floor(flow.conversationAge / (1000 * 60 * 60));
+      if (hours > 24) {
+        contextInfo += '- Ha pasado más de un día desde que comenzó esta conversación.\n';
+      } else if (hours > 6) {
+        contextInfo += `- La conversación comenzó hace ${hours} horas.\n`;
+      }
+    }
+
+    return contextInfo;
+  }
+
+  generateUserPrompt(conversationHistory, conversationContext = null) {
     const currentTime = new Date();
     const timeOfDay = this.getTimeOfDay(currentTime);
     const dayOfWeek = currentTime.toLocaleDateString("es-ES", {
@@ -417,9 +501,12 @@ Es importante que no te comprometas a hacer planes específicos o a largo plazo 
     if (conversationHistory && conversationHistory.length > 0) {
       const recentMessages = conversationHistory.slice(-5);
       const lastMessage = conversationHistory[conversationHistory.length - 1];
-      const fromContact = lastMessage.from === "contact";
+      
+      // Handle both old and new message format
+      const isFromContact = lastMessage.from === "contact" || lastMessage.from === "incoming";
+      const messageTimestamp = lastMessage.timestamp;
 
-      const timeSinceLastMessage = Date.now() - lastMessage.timestamp;
+      const timeSinceLastMessage = Date.now() - messageTimestamp;
       const hoursSince = Math.floor(timeSinceLastMessage / (1000 * 60 * 60));
 
       if (hoursSince > 6) {
@@ -427,9 +514,23 @@ Es importante que no te comprometas a hacer planes específicos o a largo plazo 
       }
       prompt += `Aquí está el contexto de la conversación reciente:\n`;
       recentMessages.forEach((msg) => {
-        const speaker = msg.from === "me" ? "Godoy" : "Ella";
-        prompt += `${speaker}: ${msg.body}\n`;
+        // Handle both old and new message formats
+        const speaker = (msg.from === "me" || msg.from === "outgoing") ? "Godoy" : "Ella";
+        const content = msg.isVoiceMessage && msg.body.startsWith('[Voice:') 
+          ? `(Mensaje de voz) ${msg.body.replace(/^\[Voice:\s*/, '').replace(/\]$/, '')}` 
+          : msg.body;
+        prompt += `${speaker}: ${content}\n`;
       });
+
+      // Add conversation context if available
+      if (conversationContext && conversationContext.conversationFlow) {
+        const flow = conversationContext.conversationFlow;
+        if (flow.pattern === 'monologue') {
+          prompt += `\nNOTA: Has enviado varios mensajes seguidos sin respuesta. Mantén un tono cariñoso pero dale espacio.\n`;
+        } else if (flow.awaitingResponse && isFromContact) {
+          prompt += `\nNOTA: Ella acaba de escribir, es buen momento para responder de manera natural.\n`;
+        }
+      }
       prompt += `
         Responde de manera natural como Godoy lo haría, teniendo en cuenta el flujo completo de la conversación. 
         - Si ella ha dicho varias cosas, responde considerando el tono general (cansada, feliz, triste, bromista, cariñosa, preocupada, etc).
@@ -515,7 +616,6 @@ Es importante que no te comprometas a hacer planes específicos o a largo plazo 
       "Ya llegaste a casa?",
 
       // His shy but caring style
-      "Hola :)",
       "Buenos días :)",
       "Te extraño :/",
       "Que haces? ",
@@ -539,7 +639,7 @@ Es importante que no te comprometas a hacer planes específicos o a largo plazo 
       return { valid: false, reason: "Message is empty or not a string" };
     }
 
-    if (message.length > 500) {
+    if (message.length > 5000) {
       return { valid: false, reason: "Message is too long for Godoy's style" };
     }
 
@@ -636,6 +736,62 @@ Es importante que no te comprometas a hacer planes específicos o a largo plazo 
     }
 
     return { valid: true };
+  }
+
+  analyzeConversationContext(conversationContext) {
+    if (!conversationContext || !conversationContext.conversationFlow) {
+      return '';
+    }
+
+    const { conversationFlow, stats, hasHistory } = conversationContext;
+    let contextInfo = '';
+
+    if (!hasHistory) {
+      contextInfo += 'CONTEXTO: Primera conversación o historial vacío.\n';
+      return contextInfo;
+    }
+
+    // Add conversation pattern analysis
+    switch (conversationFlow.pattern) {
+      case 'monologue':
+        contextInfo += 'CONTEXTO: Has enviado varios mensajes seguidos sin respuesta. Mantén un tono cariñoso pero dale espacio para responder.\n';
+        break;
+      case 'responsive':
+        contextInfo += 'CONTEXTO: Ella está participando activamente en la conversación. Buen momento para un intercambio natural.\n';
+        break;
+      case 'initiating':
+        contextInfo += 'CONTEXTO: Tú has estado iniciando más la conversación. Considera hacer preguntas que la inviten a participar.\n';
+        break;
+      case 'balanced':
+        contextInfo += 'CONTEXTO: Conversación equilibrada entre ambos. Continúa el flujo natural.\n';
+        break;
+    }
+
+    // Add timing context
+    if (conversationFlow.awaitingResponse) {
+      contextInfo += 'TIMING: Esperando respuesta de tu último mensaje. ';
+    }
+
+    if (conversationFlow.lastIncomingMessage) {
+      const timeSinceHerMessage = Date.now() - conversationFlow.lastIncomingMessage;
+      const hoursSince = Math.floor(timeSinceHerMessage / (1000 * 60 * 60));
+      
+      if (hoursSince > 12) {
+        contextInfo += `Ella escribió por última vez hace ${hoursSince} horas. `;
+      } else if (hoursSince > 3) {
+        contextInfo += `Ella escribió hace ${hoursSince} horas. `;
+      }
+    }
+
+    // Add conversation age context
+    if (conversationFlow.conversationAge) {
+      const days = Math.floor(conversationFlow.conversationAge / (1000 * 60 * 60 * 24));
+      if (days > 0) {
+        contextInfo += `Esta conversación lleva ${days} días activa. `;
+      }
+    }
+
+    return contextInfo;
   }
 }
 

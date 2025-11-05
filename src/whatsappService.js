@@ -1,10 +1,12 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
+const EventEmitter = require('events');
 const logger = require('./logger');
 
-class WhatsAppService {
+class WhatsAppService extends EventEmitter {
     constructor() {
+        super();
         this.client = null;
         this.isReady = false;
         this.qrCodeGenerated = false;
@@ -212,6 +214,33 @@ class WhatsAppService {
 
         this.client.on('error', (error) => {
             logger.error('WhatsApp Client error:', error);
+        });
+
+        // CRITICAL: Listen for incoming messages
+        this.client.on('message', async (message) => {
+            try {
+                // Only process messages that are not from us
+                if (!message.fromMe) {
+                    const contact = await message.getContact();
+                    const phoneNumber = contact.number;
+                    
+                    logger.info(`📨 Incoming message from ${phoneNumber}: ${message.body}`);
+                    
+                    // Emit event for the app to handle
+                    this.emit('incomingMessage', {
+                        id: message.id._serialized,
+                        body: message.body,
+                        from: message.from,
+                        to: message.to,
+                        timestamp: message.timestamp,
+                        fromMe: message.fromMe,
+                        type: message.type,
+                        phoneNumber: phoneNumber
+                    });
+                }
+            } catch (error) {
+                logger.error('Error processing incoming message:', error);
+            }
         });
     }
 

@@ -65,22 +65,23 @@ async function sendAutomaticVoiceMessage() {
         // Update conversation history from WhatsApp
         try {
             const whatsappMessages = await whatsappService.getMessages(targetPhoneNumber, 10);
-            await conversationHistory.updateHistoryFromWhatsApp(targetPhoneNumber, whatsappMessages);
+            await conversationHistory.syncFromWhatsApp(targetPhoneNumber, whatsappMessages);
         } catch (error) {
-            logger.warn('Failed to update history from WhatsApp:', error.message);
+            logger.warn('Failed to sync history from WhatsApp:', error.message);
         }
 
-        // Get recent conversation history
-        const conversationHistoryData = await conversationHistory.getHistory(targetPhoneNumber, 10);
+        // Get enhanced conversation context
+        const conversationContext = await conversationHistory.getConversationContext(targetPhoneNumber, 20);
 
-        // Generate message for voice
+        // Generate message for voice with enhanced context
         const messageOptions = {
             style: process.env.MESSAGE_STYLE || 'romantic',
             language: process.env.MESSAGE_LANGUAGE || 'spanish',
-            temperature: parseFloat(process.env.TEMPERATURE) || 0.9 // Higher for voice
+            temperature: parseFloat(process.env.TEMPERATURE) || 0.9, // Higher for voice
+            conversationContext: conversationContext
         };
 
-        const result = await messageGenerator.generateVoiceMessage(conversationHistoryData, messageOptions);
+        const result = await messageGenerator.generateVoiceMessage(conversationContext.messages, messageOptions);
 
         if (!result.message) {
             throw new Error('Failed to generate message for voice');
@@ -99,14 +100,14 @@ async function sendAutomaticVoiceMessage() {
             throw new Error('Failed to generate voice audio');
         }
 
-        // Send ONLY voice message (no text)
-        const sendResult = await whatsappService.sendVoiceMessage(
+        // Send voice message (voice only, no text)
+        await whatsappService.sendVoiceMessage(
             targetPhoneNumber, 
             voiceResult.filePath
         );
 
-        // Save the original generated message to history for context
-        await conversationHistory.addMessage(targetPhoneNumber, `[Voice: ${result.message}]`, 'me');
+        // Track voice message in conversation history
+        await conversationHistory.markMessageSent(targetPhoneNumber, result.message, true);
 
         // Update stats
         stats.voiceMessagesSent++;
@@ -151,24 +152,26 @@ async function sendAutomaticMessage() {
         if (!isUsingAlternative) {
             try {
                 const whatsappMessages = await whatsappService.getMessages(targetPhoneNumber, 10);
-                await conversationHistory.updateHistoryFromWhatsApp(targetPhoneNumber, whatsappMessages);
+                console.log("Whatsapp messages", whatsappMessages);
+                await conversationHistory.syncFromWhatsApp(targetPhoneNumber, whatsappMessages);
             } catch (error) {
-                logger.warn('Failed to update history from WhatsApp:', error.message);
+                logger.warn('Failed to sync history from WhatsApp:', error.message);
             }
         }
 
-        // Get recent conversation history
-        const conversationHistoryData = await conversationHistory.getHistory(targetPhoneNumber, 10);
+        // Get enhanced conversation context
+        const conversationContext = await conversationHistory.getConversationContext(targetPhoneNumber, 20);
 
-        // Generate message
+        // Generate message with enhanced context
         const messageOptions = {
             style: process.env.MESSAGE_STYLE || 'friendly',
             language: process.env.MESSAGE_LANGUAGE || 'spanish',
             maxTokens: parseInt(process.env.MAX_TOKENS) || 150,
-            temperature: parseFloat(process.env.TEMPERATURE) || 0.8
+            temperature: parseFloat(process.env.TEMPERATURE) || 0.8,
+            conversationContext: conversationContext
         };
 
-        const result = await messageGenerator.generateMessage(conversationHistoryData, messageOptions);
+        const result = await messageGenerator.generateMessage(conversationContext.messages, messageOptions);
 
         if (!result.message) {
             throw new Error('Failed to generate message');
@@ -181,10 +184,10 @@ async function sendAutomaticMessage() {
         }
 
         // Send message
-        const sendResult = await whatsappService.sendMessage(targetPhoneNumber, result.message);
+        await whatsappService.sendMessage(targetPhoneNumber, result.message);
 
-        // Save to history
-        await conversationHistory.addMessage(targetPhoneNumber, result.message, 'me');
+        // Track message in conversation history
+        await conversationHistory.markMessageSent(targetPhoneNumber, result.message, false);
 
         // Update stats
         stats.messagesSent++;
@@ -315,15 +318,44 @@ async function initializeWhatsApp() {
     try {
         logger.info('Initializing primary WhatsApp service...');
         whatsappService = new WhatsAppService();
+        
+        // Set up incoming message handler BEFORE initializing
+        whatsappService.on('incomingMessage', async (messageData) => {
+            try {
+                logger.info(`📨 Processing incoming message from ${messageData.phoneNumber}: ${messageData.body}`);
+                
+                // Normalize phone numbers for comparison (remove all non-digits)
+                const cleanTargetNumber = targetPhoneNumber ? targetPhoneNumber.replace(/\D/g, '') : null;
+                const cleanIncomingNumber = messageData.phoneNumber.replace(/\D/g, '');
+                
+                // Only store messages from our target contact
+                if (cleanTargetNumber && cleanIncomingNumber === cleanTargetNumber) {
+                    await conversationHistory.addMessage(cleanTargetNumber, messageData, true);
+                    logger.info(`✅ Stored incoming message from ${messageData.phoneNumber}`);
+                    
+                    // Log the new message context
+                    logger.info(`💬 New message in conversation history from Dulce Elena: "${messageData.body}"`);
+                    
+                    // Get updated conversation context to see the change
+                    const context = await conversationHistory.getConversationContext(cleanTargetNumber, 5);
+                    logger.info(`� Conversation now has ${context.messages.length} messages, last from: ${context.conversationFlow?.lastInteraction ? new Date(context.conversationFlow.lastInteraction).toLocaleTimeString() : 'unknown'}`);
+                } else {
+                    logger.debug(`Ignoring message from non-target contact: ${messageData.phoneNumber} (target: ${cleanTargetNumber})`);
+                }
+            } catch (error) {
+                logger.error('Error handling incoming message:', error);
+            }
+        });
+        
         await whatsappService.initialize();
-        logger.info('Primary WhatsApp service initialized');
+        logger.info('Primary WhatsApp service initialized with message listener');
     } catch (error) {
         logger.error('Primary service failed, switching to alternative:', error.message);
         try {
             whatsappService = new AlternativeWhatsAppService();
             await whatsappService.initialize();
             isUsingAlternative = true;
-            logger.info('Alternative WhatsApp service initialized');
+            logger.info('Alternative WhatsApp service initialized (no incoming message support)');
         } catch (altError) {
             logger.error('Alternative service also failed:', altError.message);
             whatsappService = {
